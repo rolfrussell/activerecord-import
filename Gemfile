@@ -44,3 +44,7 @@ if version > "4.0"
 end
 
 eval_gemfile File.expand_path("../gemfiles/#{version}.gemfile", __FILE__)
+
+group :test do
+  gem 'test-unit', '~> 3.0'
+end

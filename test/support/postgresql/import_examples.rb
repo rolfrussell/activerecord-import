@@ -100,6 +100,25 @@ def should_support_postgresql_import_functionality
           end
         end
       end
+
+      context "with :timestamps option set to false", Timecop.freeze do
+        it "doesn't overwrite association timestamps" do
+          new_topics.each do |topic|
+            topic.books.each do |book|
+              book.created_at = 2.years.ago.utc
+              book.updated_at = 1.years.ago.utc
+            end
+          end
+
+          Topic.import new_topics, :recursive => true, :timestamps => false
+          new_topics.each do |topic|
+            topic.books.each do |book|
+              assert_equal 2.years.ago.utc, book.reload.created_at
+              assert_equal 1.years.ago.utc, book.reload.updated_at
+            end
+          end
+        end
+      end
     end
   end
 end

@@ -296,7 +296,7 @@ class ActiveRecord::Base
       end
 
       # record timestamps unless disabled in ActiveRecord::Base
-      if record_timestamps && options.delete( :timestamps )
+      if record_timestamps && options[:timestamps]
          add_special_rails_stamps column_names, array_of_attributes, options
       end
 
