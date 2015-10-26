@@ -3,7 +3,25 @@ require "ostruct"
 module ActiveRecord::Import::ConnectionAdapters ; end
 
 module ActiveRecord::Import #:nodoc:
-  class Result < Struct.new(:failed_instances, :num_inserts, :ids)
+  class Result
+    attr_reader :failed_instances, :num_inserts, :ids
+
+    def initialize(klass=nil, failed_instances=[], num_inserts=0, ids_array=[])
+      @failed_instances = failed_instances
+      @num_inserts = num_inserts
+      @ids = {}
+      @ids[klass.to_s] = ids_array if klass
+    end
+
+    def add(klass, result)
+      @failed_instances += result.failed_instances
+      @num_inserts += result.num_inserts
+      @ids.merge!(result.ids)
+    end
+
+    def to_s
+      "#<#{self.class} failed_instances=#{failed_instances}, num_inserts=#{num_inserts}, ids=#{ids}>"
+    end
   end
 
   module ImportSupport #:nodoc:
@@ -68,7 +86,7 @@ class ActiveRecord::Associations::CollectionAssociation
 
     # supports empty array
     elsif args.last.is_a?( Array ) and args.last.empty?
-      return ActiveRecord::Import::Result.new([], 0, []) if args.last.empty?
+      return ActiveRecord::Import::Result.new(self, [], 0, []) if args.last.empty?
 
     # supports 2-element array and array
     elsif args.size == 2 and args.first.is_a?( Array ) and args.last.is_a?( Array )
@@ -276,7 +294,7 @@ class ActiveRecord::Base
         end
         # supports empty array
       elsif args.last.is_a?( Array ) and args.last.empty?
-        return ActiveRecord::Import::Result.new([], 0, []) if args.last.empty?
+        return ActiveRecord::Import::Result.new(self, [], 0, []) if args.last.empty?
         # supports 2-element array and array
       elsif args.size == 2 and args.first.is_a?( Array ) and args.last.is_a?( Array )
         column_names, array_of_attributes = args
@@ -304,14 +322,13 @@ class ActiveRecord::Base
         import_with_validations( column_names, array_of_attributes, options )
       else
         (num_inserts, ids) = import_without_validations_or_callbacks( column_names, array_of_attributes, options )
-        ActiveRecord::Import::Result.new([], num_inserts, ids)
+        ActiveRecord::Import::Result.new(self, [], num_inserts, ids)
       end
-
       if options[:synchronize]
         sync_keys = options[:synchronize_keys] || [self.primary_key]
         synchronize( options[:synchronize], sync_keys)
       end
-      return_obj.num_inserts = 0 if return_obj.num_inserts.nil?
+      # return_obj.num_inserts = 0 if return_obj.num_inserts.nil?
 
       # if we have ids, then set the id on the models and mark the models as clean.
       if support_setting_primary_key_of_imported_objects?
@@ -319,10 +336,10 @@ class ActiveRecord::Base
 
         # if there are auto-save associations on the models we imported that are new, import them as well
         if options[:recursive]
-          import_associations(models, options)
+          result = import_associations(models, options)
+          return_obj.add(self, result)
         end
       end
-
       return_obj
     end
 
@@ -361,7 +378,7 @@ class ActiveRecord::Base
                     else
                       import_without_validations_or_callbacks( column_names, array_of_attributes, options )
                     end
-      ActiveRecord::Import::Result.new(failed_instances, num_inserts, ids)
+      ActiveRecord::Import::Result.new(self, failed_instances, num_inserts, ids)
     end
 
     # Imports the passed in +column_names+ and +array_of_attributes+
@@ -416,7 +433,7 @@ class ActiveRecord::Base
 
     def set_ids_and_mark_clean(models, import_result)
       unless models.nil?
-        import_result.ids.each_with_index do |id, index|
+        import_result.ids[self.to_s].each_with_index do |id, index|
           models[index].id = id.to_i
           models[index].instance_variable_get(:@changed_attributes).clear # mark the model as saved
         end
@@ -432,11 +449,16 @@ class ActiveRecord::Base
       associated_objects_by_class={}
       models.each {|model| find_associated_objects_for_import(associated_objects_by_class, model) }
 
+      return_obj = ActiveRecord::Import::Result.new
       associated_objects_by_class.each_pair do |class_name, associations|
         associations.each_pair do |association_name, associated_records|
-          associated_records.first.class.import(associated_records, options) unless associated_records.empty?
+          klass = associated_records.first.class
+          result = klass.import(associated_records, options) unless associated_records.empty?
+          return_obj.add(klass, result)
         end
       end
+
+      return_obj
     end
 
     # We are eventually going to call Class.import <objects> so we build up a hash

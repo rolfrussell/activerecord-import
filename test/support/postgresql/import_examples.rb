@@ -83,6 +83,11 @@ def should_support_postgresql_import_functionality
         end
       end
 
+      it "returns failed_instances of associations" do
+        result = Topic.import new_topics_with_invalid_chapter, :validate => true, :recursive => true
+        assert_equal 1, result.failed_instances.length
+      end
+
       # These models dont validate associated.  So we expect that books and topics get inserted, but not chapters
       # Putting a transaction around everything wouldn't work, so if you want your chapters to prevent topics from
       # being created, you would need to have validates_associated in your models and insert with validation
