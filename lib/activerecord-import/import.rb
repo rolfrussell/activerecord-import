@@ -452,8 +452,9 @@ class ActiveRecord::Base
       return_obj = ActiveRecord::Import::Result.new
       associated_objects_by_class.each_pair do |class_name, associations|
         associations.each_pair do |association_name, associated_records|
+          next if associated_records.empty?
           klass = associated_records.first.class
-          result = klass.import(associated_records, options) unless associated_records.empty?
+          result = klass.import(associated_records, options)
           return_obj.add(klass, result)
         end
       end
