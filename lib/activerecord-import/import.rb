@@ -436,7 +436,15 @@ class ActiveRecord::Base
         import_result.ids[self.to_s].each_with_index do |id, index|
           models[index].id = id.to_i
           models[index].instance_variable_get(:@changed_attributes).clear # mark the model as saved
+          set_ids_on_associations(models[index])
         end
+      end
+    end
+
+    def set_ids_on_associations(model)
+      model.class.reflect_on_all_autosave_associations.each do |association_reflection|
+        associations = model.send(association_reflection.name)
+        associations.each { |a| a.send("#{association_reflection.foreign_key}=", model.id) }
       end
     end
 
@@ -446,12 +454,17 @@ class ActiveRecord::Base
       #    does not handle associations that reference themselves
       #    assumes that the only associations to be saved are marked with :autosave
       #    should probably take a hash to associations to follow.
+      return_obj = ActiveRecord::Import::Result.new
+      dont_follow_associations_on = options[:dont_follow_associations_on] || []
+      return return_obj if dont_follow_associations_on.include?(models.first.class)   # otherwise associations will cause
+
       associated_objects_by_class={}
       models.each {|model| find_associated_objects_for_import(associated_objects_by_class, model) }
 
-      return_obj = ActiveRecord::Import::Result.new
       associated_objects_by_class.each_pair do |class_name, associations|
-        associations.each_pair do |association_name, associated_records|
+        sorted_associations_array(associations, options).each do |association|
+          association_name = association.first
+          associated_records = association.last
           next if associated_records.empty?
           klass = associated_records.first.class
           result = klass.import(associated_records, options)
@@ -460,6 +473,25 @@ class ActiveRecord::Base
       end
 
       return_obj
+    end
+
+    def sorted_associations_array(associations, options)
+      associations.sort_by do |name, records|
+        case name
+        when :users
+          1
+        when :payment_profiles
+          2
+        when :subscriptions
+          3
+        when :current_subscriptions
+          3
+        when :charges
+          4
+        else
+          5
+        end
+      end
     end
 
     # We are eventually going to call Class.import <objects> so we build up a hash
